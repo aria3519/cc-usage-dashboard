@@ -1,0 +1,25 @@
+{
+  "name": "cc-usage-dashboard",
+  "version": "1.1.0",
+  "private": true,
+  "description": "Claude Code 실시간 사용량 대시보드 (OTLP 수집 + 예산 알림 + 프로젝트별 그래프)",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "chart.js": "^4.6.1",
+    "express": "^4.21.2",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}
