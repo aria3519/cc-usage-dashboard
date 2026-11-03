@@ -1,10 +1,12 @@
 // 테스트용: 가짜 Claude Code api_request 이벤트를 대시보드로 보낸다.
-// 사용법: node scripts/send-sample.mjs [개수]
+// 사용법: node scripts/send-sample.mjs [개수] [최근 며칠에 흩뿌릴지]
 const ENDPOINT = process.env.ENDPOINT ?? "http://localhost:4318/v1/logs";
 const COUNT = Number(process.argv[2] ?? 20);
 const PROJECTS = ["STB", "AIO", "MazeRush"];
 const MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
-const SPREAD_MS = 3 * 24 * 3600 * 1000; // 최근 3일에 흩뿌림
+const SPREAD_DAYS = Number(process.argv[3] ?? 3);
+const SPREAD_MS = SPREAD_DAYS * 24 * 3600 * 1000; // 최근 N일에 흩뿌림
+const SESSIONS = Array.from({ length: Math.max(3, SPREAD_DAYS * 2) }, (_, i) => `sample-${i}-${Math.random().toString(36).slice(2, 8)}`);
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const s = (key, v) => ({ key, value: { stringValue: String(v) } });
@@ -26,7 +28,7 @@ for (let i = 0; i < COUNT; i++) {
       s("output_tokens", Math.floor(Math.random() * 3000)),
       s("cache_read_tokens", Math.floor(Math.random() * 60000)),
       s("cache_creation_tokens", Math.floor(Math.random() * 5000)),
-      s("session.id", "sample-session"),
+      s("session.id", pick(SESSIONS)),
     ],
   };
   if (!byProject.has(project)) byProject.set(project, []);

@@ -20,6 +20,9 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
   .spacer { flex: 1; }
+  nav { display: flex; gap: 4px; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 8px; }
+  nav a.on { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
   button.toggle { background: var(--panel); color: var(--text); border: 1px solid var(--line);
                   border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; }
   main { padding: 20px 24px; display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); max-width: 1400px; margin: 0 auto; }
@@ -56,6 +59,7 @@
 <body>
 <header>
   <h1>Claude Code 사용량</h1>
+  <nav><a href="/" class="on">개요</a><a href="/usage.html">사용량 분석</a></nav>
   <span class="live"><span id="dot" class="dot"></span><span id="liveText">연결 중…</span></span>
   <span class="spacer"></span>
   <button class="toggle" id="currencyBtn">원화로 보기</button>
@@ -109,6 +113,16 @@ function tokens(n) {
   return String(n);
 }
 function scopeName(s) { return s === "global" ? "전체" : s; }
+function alertTitle(a) {
+  if (a.scope === "limit") return `<b>${a.period === "five_hour" ? "5시간 한도" : "주간 한도"}</b> ${Math.round(a.threshold * 100)}% 도달`;
+  return `<b>${esc(scopeName(a.scope))}</b> ${a.period === "daily" ? "일일" : "월간"} 예산 ${Math.round(a.threshold * 100)}% 도달`;
+}
+function alertDetail(a) {
+  return a.scope === "limit" ? `현재 ${Math.round(a.spent)}% 사용` : `${money(a.spent)} / ${money(a.budget)}`;
+}
+function alertKeyLabel(a) {
+  return a.scope === "limit" ? `${fmtTime(Number(a.period_key))} 리셋` : esc(a.period_key);
+}
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 function fmtTime(ts) { return new Date(ts).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
 
@@ -153,10 +167,9 @@ function renderSummary(s) {
 
   document.getElementById("alerts").innerHTML = s.alerts.length
     ? s.alerts.map(a => `
-      <div class="alert ${a.threshold >= 1 ? "bad" : ""}">
-        <b>${esc(scopeName(a.scope))}</b> ${a.period === "daily" ? "일일" : "월간"} 예산 ${Math.round(a.threshold * 100)}% 도달
-        — ${money(a.spent)} / ${money(a.budget)}
-        <time>${fmtTime(a.ts)} · ${esc(a.period_key)}</time>
+      <div class="alert ${a.threshold >= 0.95 ? "bad" : ""}">
+        ${alertTitle(a)} — ${alertDetail(a)}
+        <time>${fmtTime(a.ts)} · ${alertKeyLabel(a)}</time>
       </div>`).join("")
     : `<div class="empty">아직 알림이 없어요.</div>`;
 
@@ -271,11 +284,11 @@ function scheduleRefresh() {
 
 function showToast(a) {
   const el = document.getElementById("toast");
-  el.innerHTML = `⚠️ <b>${esc(scopeName(a.scope))}</b> ${a.period === "daily" ? "일일" : "월간"} 예산 ${Math.round(a.threshold * 100)}% 도달<br>${money(a.spent)} / ${money(a.budget)}`;
+  el.innerHTML = `⚠️ ${alertTitle(a)}<br>${alertDetail(a)}`;
   el.style.display = "block";
   setTimeout(() => (el.style.display = "none"), TOAST_MS);
   if ("Notification" in window && Notification.permission === "granted") {
-    new Notification("Claude Code 예산 알림", { body: `${scopeName(a.scope)} ${Math.round(a.threshold * 100)}% 도달 (${money(a.spent)})` });
+    new Notification("Claude Code 알림", { body: `${alertTitle(a).replace(/<[^>]+>/g, "")} · ${alertDetail(a)}` });
   }
 }
 
@@ -284,6 +297,7 @@ function connect() {
   const dot = document.getElementById("dot"), txt = document.getElementById("liveText");
   es.addEventListener("hello", () => { dot.classList.add("on"); txt.textContent = "실시간"; });
   es.addEventListener("usage", scheduleRefresh);
+  es.addEventListener("limits", scheduleRefresh);
   es.addEventListener("alert", e => { showToast(JSON.parse(e.data)); scheduleRefresh(); });
   es.onerror = () => { dot.classList.remove("on"); txt.textContent = "재연결 중…"; };
 }

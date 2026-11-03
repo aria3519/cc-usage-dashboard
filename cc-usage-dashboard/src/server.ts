@@ -5,6 +5,8 @@ import { getConfig } from "./config.js";
 import { timeKeys } from "./time.js";
 import { extractApiRequests, type OtlpLogsPayload } from "./otlp.js";
 import { checkBudgets, getSpent, getBudget, GLOBAL_SCOPE, type AlertRow } from "./budget.js";
+import { recordStatusline } from "./limits.js";
+import { buildAnalysis } from "./analysis.js";
 
 const BODY_LIMIT = "20mb";
 const MS_PER_HOUR = 3_600_000;
@@ -76,6 +78,23 @@ app.post("/v1/logs", (req: Request, res: Response) => {
 app.post(["/v1/metrics", "/v1/traces"], (req: Request, res: Response) => {
   if (rejectProtobuf(req, res)) return;
   res.json({ partialSuccess: {} });
+});
+
+// ───────────────────────── 상태줄 → 공식 한도(/usage) 수신 ─────────────────────────
+app.post("/api/statusline", (req: Request, res: Response) => {
+  try {
+    const { snapshot, alerts } = recordStatusline(req.body ?? {});
+    if (snapshot) broadcast("limits", snapshot);
+    for (const a of alerts) broadcast("alert", a);
+    res.json({ ok: true, stored: snapshot !== null });
+  } catch (err) {
+    console.error("[statusline] 처리 실패:", err);
+    res.status(400).json({ error: (err as Error).message });
+  }
+});
+
+app.get("/api/analysis", (_req: Request, res: Response) => {
+  res.json(buildAnalysis());
 });
 
 // ───────────────────────── 조회 API ─────────────────────────

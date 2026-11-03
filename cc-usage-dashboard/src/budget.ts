@@ -7,8 +7,8 @@ export const GLOBAL_SCOPE = "global";
 export interface AlertRow {
   id: number;
   ts: number;
-  scope: string;
-  period: Period;
+  scope: string; // 'global' | 프로젝트 이름 | 'limit'(구독 한도)
+  period: string; // 'daily' | 'monthly' | 'five_hour' | 'seven_day'
   period_key: string;
   threshold: number;
   spent: number;
@@ -42,7 +42,7 @@ function percentLabel(threshold: number): string {
   return `${Math.round(threshold * 100)}%`;
 }
 
-async function sendDiscord(text: string): Promise<void> {
+export async function sendDiscord(text: string): Promise<void> {
   const url = getConfig().discordWebhookUrl;
   if (!url) return;
   try {

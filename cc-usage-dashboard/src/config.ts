@@ -11,6 +11,8 @@ export interface AppConfig {
   timezone: string;
   krwPerUsd: number;
   alertThresholds: number[];
+  /** 구독 한도(5시간/7일) 알림 단계 — 사용률 기준 (0.8 = 80%) */
+  limitAlertThresholds: number[];
   discordWebhookUrl: string;
   budgets: {
     global: Budget;
@@ -25,6 +27,7 @@ const DEFAULT_CONFIG: AppConfig = {
   timezone: "Asia/Seoul",
   krwPerUsd: 1400,
   alertThresholds: [0.5, 0.8, 1.0],
+  limitAlertThresholds: [0.5, 0.8, 0.95],
   discordWebhookUrl: "",
   budgets: { global: {}, projects: {} },
 };

@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>사용량 분석 · Claude Code</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%23d97757'/%3E%3Crect x='3' y='8' width='2' height='5' fill='white'/%3E%3Crect x='7' y='5' width='2' height='8' fill='white'/%3E%3Crect x='11' y='3' width='2' height='10' fill='white'/%3E%3C/svg%3E" />
+<script src="/vendor/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #e6e8ee; --muted: #8b93a7;
+    --accent: #d97757; --blue: #4f8cff; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 700; }
+  nav { display: flex; gap: 4px; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 8px; }
+  nav a.on { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+  .live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .spacer { flex: 1; }
+  button.toggle { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+                  border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; }
+  main { padding: 20px 24px; display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); max-width: 1400px; margin: 0 auto; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+  .card h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 12px; display: flex; justify-content: space-between; gap: 8px; }
+  .card h2 small { font-weight: 400; }
+  .w2 { grid-column: span 2; } .w3 { grid-column: span 3; } .w4 { grid-column: span 4; } .w5 { grid-column: span 5; } .w6 { grid-column: span 6; }
+  .w7 { grid-column: span 7; } .w8 { grid-column: span 8; } .w12 { grid-column: span 12; }
+  @media (max-width: 1000px) { .w3 { grid-column: span 6; } .w2, .w4, .w5, .w6, .w7, .w8 { grid-column: span 12; } }
+  @media (max-width: 560px) { main { padding: 16px; } .w3 { grid-column: span 12; } .stats { grid-template-columns: 1fr 1fr; }
+    .gauge-legend { flex-direction: column; gap: 2px; } header { padding: 12px 16px; } }
+  .chart { position: relative; height: 260px; }
+  .muted { color: var(--muted); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* 인사이트 */
+  .insights { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .insights li { padding: 8px 12px; background: #1c2029; border-radius: 8px; font-size: 13px; }
+
+  /* 한도 카드 */
+  .limit .big { font-size: 40px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .limit .big small { font-size: 16px; color: var(--muted); font-weight: 500; margin-left: 6px; }
+  .gauge { position: relative; height: 14px; background: var(--line); border-radius: 7px; margin: 14px 0 6px; overflow: visible; }
+  .gauge > .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px; transition: width .4s; }
+  .gauge > .proj { position: absolute; top: 0; bottom: 0; border-radius: 7px; opacity: .35; }
+  .gauge > .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); }
+  .gauge-legend { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px; margin-top: 14px; }
+  .stats div span { display: block; color: var(--muted); font-size: 12px; }
+  .stats div b { font-size: 15px; font-variant-numeric: tabular-nums; }
+  .warnbox { margin-top: 12px; padding: 8px 10px; border-radius: 8px; font-size: 13px; background: #22141a; border-left: 3px solid var(--bad); }
+  .okbox { margin-top: 12px; padding: 8px 10px; border-radius: 8px; font-size: 13px; background: #13201a; border-left: 3px solid var(--ok); }
+  .infobox { padding: 10px 12px; border-radius: 8px; font-size: 13px; background: #1c2029; border-left: 3px solid var(--blue); }
+  .infobox code { background: var(--bg); padding: 1px 6px; border-radius: 4px; }
+
+  /* KPI */
+  .kpi .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .kpi .s { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .up { color: var(--warn); } .down { color: var(--ok); }
+
+  /* 표 */
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.r, th.r { text-align: right; }
+  .tbl { overflow-x: auto; }
+  .share { display: inline-block; height: 6px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--line); }
+
+  /* 히트맵 */
+  .heat-wrap { overflow-x: auto; }
+  .heat { display: grid; grid-template-columns: 24px repeat(24, minmax(10px, 1fr)); gap: 3px; font-size: 11px; min-width: 330px; }
+  .heat .c { height: 20px; border-radius: 3px; background: var(--line); }
+  .heat .h { color: var(--muted); text-align: center; }
+  .heat .d { color: var(--muted); display: flex; align-items: center; }
+  .heat-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 10px; justify-content: flex-end; }
+  .heat-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  #toast { position: fixed; right: 20px; bottom: 20px; max-width: 360px; padding: 12px 14px; border-radius: 10px;
+           background: #22141a; border: 1px solid var(--bad); display: none; z-index: 10; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Claude Code 사용량</h1>
+  <nav><a href="/">개요</a><a href="/usage.html" class="on">사용량 분석</a></nav>
+  <span class="live"><span id="dot" class="dot"></span><span id="liveText">연결 중…</span></span>
+  <span class="spacer"></span>
+  <button class="toggle" id="currencyBtn">원화로 보기</button>
+</header>
+
+<main>
+  <div class="card w12" id="setupCard" style="display:none"></div>
+  <div class="card w12"><h2>한눈에 보기</h2><ul class="insights" id="insights"></ul></div>
+
+  <div class="card w5 limit" id="fiveCard"></div>
+  <div class="card w5 limit" id="sevenCard"></div>
+  <div class="card w2" id="lastHourCard"></div>
+
+  <div class="card w12"><h2>한도 사용률 추이 <small id="historyNote">최근 7일</small></h2><div class="chart"><canvas id="historyChart"></canvas></div></div>
+
+  <div class="card w3 kpi"><h2>이번 주 토큰</h2><div class="v" id="wkTokens">-</div><div class="s" id="wkTokensSub"></div></div>
+  <div class="card w3 kpi"><h2>이번 주 비용 (추정)</h2><div class="v" id="wkCost">-</div><div class="s" id="wkCostSub"></div></div>
+  <div class="card w3 kpi"><h2>이번 주 요청</h2><div class="v" id="wkReq">-</div><div class="s" id="wkReqSub"></div></div>
+  <div class="card w3 kpi"><h2>이 속도면 이번 주 총</h2><div class="v" id="wkProj">-</div><div class="s" id="wkProjSub"></div></div>
+
+  <div class="card w8"><h2>요일별 토큰 — 이번 주 vs 지난주 <small id="weekRange"></small></h2><div class="chart"><canvas id="weekChart"></canvas></div></div>
+  <div class="card w4"><h2>이번 주 토큰 구성</h2><div class="chart"><canvas id="compChart"></canvas></div></div>
+
+  <div class="card w7"><h2>이번 주 프로젝트별</h2><div class="tbl"><table id="projTable"></table></div></div>
+  <div class="card w5"><h2>현재 5시간 창 — 모델별</h2><div class="tbl"><table id="modelTable"></table></div></div>
+
+  <div class="card w12"><h2>시간대별 사용 패턴 <small>최근 4주, 요일 × 시간 토큰 합계</small></h2><div id="heatmap"></div></div>
+
+  <div class="card w12"><h2>이번 주 토큰을 많이 쓴 세션</h2><div class="tbl"><table id="sessionTable"></table></div></div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const PALETTE = ["#d97757", "#4f8cff", "#3fb950", "#c678dd", "#d29922", "#2bb3b3", "#f85149", "#8b93a7"];
+const WARN_PCT = 80, DANGER_PCT = 95;
+const STALE_MS = 30 * 60 * 1000;
+const POLL_MS = 30000, REFRESH_DEBOUNCE_MS = 400, TOAST_MS = 8000, TICK_MS = 30000;
+
+let useKrw = false, krwPerUsd = 1400, data = null;
+const charts = {};
+const projectColor = new Map();
+
+Chart.defaults.color = "#8b93a7";
+Chart.defaults.borderColor = "#262b36";
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+function colorFor(n) { if (!projectColor.has(n)) projectColor.set(n, PALETTE[projectColor.size % PALETTE.length]); return projectColor.get(n); }
+function money(usd) {
+  if (useKrw) return Math.round(usd * krwPerUsd).toLocaleString("ko-KR") + "원";
+  return "$" + usd.toFixed(usd > 0 && usd < 1 ? 3 : 2);
+}
+function tok(n) {
+  if (n == null) return "-";
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+  return String(Math.round(n));
+}
+function pctColor(p) { return p >= DANGER_PCT ? "var(--bad)" : p >= WARN_PCT ? "var(--warn)" : "var(--ok)"; }
+function fmtDT(ms) { return new Date(ms).toLocaleString("ko-KR", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" }); }
+function fmtTime(ms) { return new Date(ms).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }); }
+function until(ms) {
+  const d = ms - Date.now();
+  if (d <= 0) return "곧";
+  const h = Math.floor(d / 3600000), m = Math.floor((d % 3600000) / 60000);
+  if (h >= 24) return `${Math.floor(h / 24)}일 ${h % 24}시간`;
+  return h ? `${h}시간 ${m}분` : `${m}분`;
+}
+function ago(ms) {
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "방금";
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  return h < 24 ? `${h}시간 전` : `${Math.floor(h / 24)}일 전`;
+}
+function change(r) {
+  if (r == null) return `<span class="muted">지난주 데이터 없음</span>`;
+  const cls = r >= 0 ? "up" : "down";
+  return `<span class="${cls}">${r >= 0 ? "▲" : "▼"} ${Math.abs(Math.round(r * 100))}%</span> <span class="muted">지난주 같은 기간 대비</span>`;
+}
+function upsertChart(id, config) {
+  if (charts[id]) { charts[id].data = config.data; charts[id].options = config.options; charts[id].update("none"); }
+  else charts[id] = new Chart($(id), config);
+}
+
+// ───────── 한도 카드 ─────────
+function limitCard(w, title) {
+  const t = w.totals;
+  const statsHtml = `
+    <div class="stats">
+      <div><span>이 창의 토큰</span><b>${tok(t.tokens)}</b></div>
+      <div><span>요청 / 추정 비용</span><b>${t.requests.toLocaleString()}건 · ${money(t.cost)}</b></div>
+      <div><span>입력 · 출력</span><b>${tok(t.input + t.cacheCreation)} · ${tok(t.output)}</b></div>
+      <div><span>캐시 적중률</span><b>${w.cacheHit == null ? "-" : Math.round(w.cacheHit * 100) + "%"}</b></div>
+      ${w.tokensPerPct ? `<div><span>1%당 토큰 (참고)</span><b>${tok(w.tokensPerPct)}</b></div>` : ""}
+      ${w.ratePctPerHour != null ? `<div><span>소진 속도 (${w.rateBasis === "recent" ? "최근 1시간" : "창 평균"})</span><b>${w.ratePctPerHour.toFixed(1)}%/시간</b></div>` : ""}
+    </div>`;
+
+  if (w.source !== "official") {
+    const span = w.window === "five_hour" ? "최근 5시간" : "최근 7일";
+    return `<h2>${title} <small>공식 수치 없음 · ${span} 기준</small></h2>
+      <div class="big">${tok(t.tokens)}<small>토큰</small></div>
+      <div class="muted" style="margin-top:6px">상태줄을 연결하면 /usage 와 같은 공식 사용률(%)과 리셋 시각이 표시돼요.</div>
+      ${statsHtml}`;
+  }
+
+  const p = w.usedPct, proj = w.projectedAtReset;
+  const stale = w.snapshotAge != null && w.snapshotAge > STALE_MS;
+  let box = "";
+  if (w.exhaustAt) box = `<div class="warnbox">이 속도면 <b>${fmtDT(w.exhaustAt)}</b>쯤 100%에 도달해요. 리셋까지 ${until(w.resetsAt)} 남았어요.</div>`;
+  else if (proj != null) box = `<div class="okbox">리셋 전까지 이 속도면 약 <b>${Math.round(proj)}%</b>에서 끝나요.</div>`;
+
+  return `<h2>${title} <small>${stale ? "⚠ " : ""}공식 수치 · ${ago(w.snapshotAge)} 갱신</small></h2>
+    <div class="big" style="color:${pctColor(p)}">${p.toFixed(0)}%<small>사용</small></div>
+    <div class="gauge">
+      ${proj != null && proj > p ? `<div class="proj" style="left:${Math.min(p,100)}%;width:${Math.max(0, Math.min(proj,100) - Math.min(p,100))}%;background:${pctColor(proj)}"></div>` : ""}
+      <div class="fill" style="width:${Math.min(p, 100)}%;background:${pctColor(p)}"></div>
+      <div class="mark" style="left:${WARN_PCT}%" title="${WARN_PCT}%"></div>
+    </div>
+    <div class="gauge-legend"><span>창 시작 ${fmtDT(w.windowStart)}</span><span><b style="color:var(--text)">${until(w.resetsAt)}</b> 후 리셋 (${fmtDT(w.resetsAt)})</span></div>
+    ${box}
+    ${statsHtml}`;
+}
+
+function renderSetup(d) {
+  const el = $("setupCard");
+  if (d.hasOfficialLimits) { el.style.display = "none"; return; }
+  el.style.display = "";
+  el.innerHTML = `<div class="infobox">
+    <b>공식 한도(/usage) 수치가 아직 없어요.</b> README의 「상태줄 연결」대로 <code>settings.json</code>에 statusLine을 추가하고
+    Claude Code를 재시작한 뒤 질문을 하나 하면 5시간·주간 사용률이 여기에 표시돼요.
+    (Pro/Max 구독에서만 제공되고, API 키 사용 시에는 토큰 분석만 표시돼요.)</div>`;
+}
+
+function renderLastHour(h) {
+  $("lastHourCard").innerHTML = `<h2>최근 1시간</h2>
+    <div class="kpi"><div class="v">${tok(h.tokens)}</div><div class="s">토큰</div></div>
+    <div class="stats" style="grid-template-columns:1fr">
+      <div><span>요청</span><b>${h.requests.toLocaleString()}건</b></div>
+      <div><span>추정 비용</span><b>${money(h.cost)}</b></div>
+      <div><span>출력 토큰</span><b>${tok(h.output)}</b></div>
+    </div>`;
+}
+
+const HISTORY_GAP_MS = 30 * 60 * 1000; // 이보다 길게 기록이 없으면 선을 끊는다
+
+function renderHistory(raw) {
+  $("historyNote").textContent = raw.length ? `최근 7일 · ${raw.length}개 기록` : "아직 기록 없음 (상태줄 연결 필요)";
+  const hist = [];
+  raw.forEach((h, i) => {
+    if (i > 0 && h.ts - raw[i - 1].ts > HISTORY_GAP_MS) hist.push({ ts: raw[i - 1].ts + 1, five: null, seven: null });
+    hist.push(h);
+  });
+  upsertChart("historyChart", {
+    type: "line",
+    data: {
+      datasets: [
+        { label: "5시간 한도", data: hist.map(h => ({ x: h.ts, y: h.five })), borderColor: "#d97757", backgroundColor: "#d9775722", fill: true, stepped: false, tension: .2, pointRadius: 0, spanGaps: false },
+        { label: "주간 한도", data: hist.map(h => ({ x: h.ts, y: h.seven })), borderColor: "#4f8cff", tension: .2, pointRadius: 0, borderWidth: 2 },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false, parsing: false, interaction: { mode: "nearest", axis: "x", intersect: false },
+      scales: {
+        x: { type: "linear", min: Date.now() - 7 * 86400000, max: Date.now(), grid: { display: false },
+             ticks: { maxTicksLimit: 8, callback: v => new Date(v).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit" }) } },
+        y: { min: 0, max: 100, ticks: { callback: v => v + "%" } },
+      },
+      plugins: {
+        legend: { labels: { boxWidth: 10 } },
+        tooltip: { callbacks: { title: i => fmtDT(i[0].parsed.x), label: c => `${c.dataset.label}: ${c.parsed.y?.toFixed(0)}%` } },
+      },
+    },
+  });
+}
+
+function renderWeek(wk) {
+  const daysElapsed = wk.todayIndex + 1;
+  $("weekRange").textContent = `${wk.monday.slice(5)} ~ ${wk.sunday.slice(5)}`;
+  $("wkTokens").textContent = tok(wk.thisWeek.tokens);
+  $("wkTokensSub").innerHTML = change(wk.changeVsLastWeek.tokens);
+  $("wkCost").textContent = money(wk.thisWeek.cost);
+  $("wkCostSub").innerHTML = change(wk.changeVsLastWeek.cost);
+  $("wkReq").textContent = wk.thisWeek.requests.toLocaleString();
+  $("wkReqSub").innerHTML = change(wk.changeVsLastWeek.requests);
+  $("wkProj").textContent = tok(wk.projectedWeek.tokens);
+  $("wkProjSub").textContent = `하루 평균 ${tok(wk.dailyAverage.tokens)} · ${money(wk.dailyAverage.cost)} (${daysElapsed}일 기준) · 지난주 총 ${tok(wk.lastWeek.tokens)}`;
+
+  upsertChart("weekChart", {
+    type: "bar",
+    data: {
+      labels: wk.labels.map((l, i) => `${l} ${wk.thisDays[i].slice(8)}일`),
+      datasets: [
+        { label: "지난주", data: wk.lastDaily.map(d => d.tokens), backgroundColor: "#3a4152", borderRadius: 3 },
+        { label: "이번 주", data: wk.thisDaily.map((d, i) => i <= wk.todayIndex ? d.tokens : null),
+          backgroundColor: wk.thisDaily.map((_, i) => i === wk.todayIndex ? "#d97757" : "#d97757bb"), borderRadius: 3 },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false,
+      scales: { x: { grid: { display: false } }, y: { ticks: { callback: v => tok(v) } } },
+      plugins: {
+        legend: { labels: { boxWidth: 10 } },
+        tooltip: { callbacks: { label: c => {
+          const src = c.datasetIndex === 0 ? wk.lastDaily[c.dataIndex] : wk.thisDaily[c.dataIndex];
+          return `${c.dataset.label}: ${tok(c.raw)} 토큰 · ${money(src.cost)} · ${src.requests}건`;
+        } } },
+      },
+    },
+  });
+
+  const t = wk.thisWeek;
+  upsertChart("compChart", {
+    type: "doughnut",
+    data: {
+      labels: ["캐시 읽기", "입력", "캐시 생성", "출력"],
+      datasets: [{ data: [t.cacheRead, t.input, t.cacheCreation, t.output], backgroundColor: ["#2bb3b3", "#4f8cff", "#c678dd", "#d97757"], borderWidth: 0 }],
+    },
+    options: {
+      maintainAspectRatio: false, cutout: "62%",
+      plugins: {
+        legend: { position: "bottom", labels: { boxWidth: 10 } },
+        tooltip: { callbacks: { label: c => {
+          const sum = c.dataset.data.reduce((a, b) => a + b, 0) || 1;
+          return `${c.label}: ${tok(c.raw)} (${Math.round(c.raw / sum * 100)}%)`;
+        } } },
+      },
+    },
+  });
+
+  const total = t.tokens || 1;
+  $("projTable").innerHTML = `<tr><th>프로젝트</th><th>비중</th><th class="r">토큰</th><th class="r">출력</th><th class="r">요청</th><th class="r">추정 비용</th><th>요일별</th></tr>` +
+    (wk.byProject.length ? wk.byProject.map(p => {
+      const share = p.tokens / total, max = Math.max(...p.daily, 1);
+      const spark = p.daily.map((v, i) => `<i title="${wk.labels[i]} ${tok(v)}" style="display:inline-block;width:6px;margin-right:2px;height:${Math.max(2, v / max * 18)}px;background:${i <= wk.todayIndex ? colorFor(p.name) : "#3a4152"};vertical-align:bottom;border-radius:1px"></i>`).join("");
+      return `<tr><td><span class="tag" style="background:${colorFor(p.name)}33">${esc(p.name)}</span></td>
+        <td><span class="share" style="width:${Math.max(3, share * 80)}px;background:${colorFor(p.name)}"></span>${Math.round(share * 100)}%</td>
+        <td class="r">${tok(p.tokens)}</td><td class="r">${tok(p.output)}</td><td class="r">${p.requests.toLocaleString()}</td>
+        <td class="r">${money(p.cost)}</td><td style="height:24px">${spark}</td></tr>`;
+    }).join("") : `<tr><td colspan="7" class="muted">이번 주 데이터가 없어요.</td></tr>`);
+}
+
+function renderModels(five) {
+  const total = five.totals.tokens || 1;
+  $("modelTable").innerHTML = `<tr><th>모델</th><th>비중</th><th class="r">토큰</th><th class="r">요청</th><th class="r">추정 비용</th></tr>` +
+    (five.byModel.length ? five.byModel.map((m, i) => `<tr><td>${esc(m.name)}</td>
+      <td><span class="share" style="width:${Math.max(3, m.tokens / total * 70)}px;background:${PALETTE[(i + 1) % PALETTE.length]}"></span>${Math.round(m.tokens / total * 100)}%</td>
+      <td class="r">${tok(m.tokens)}</td><td class="r">${m.requests}</td><td class="r">${money(m.cost)}</td></tr>`).join("")
+      : `<tr><td colspan="5" class="muted">이 창에 아직 요청이 없어요.</td></tr>`);
+}
+
+function renderHeatmap(h) {
+  const max = Math.max(...h.grid.flat(), 1);
+  let html = `<div class="heat-wrap"><div class="heat"><span></span>`;
+  for (let hr = 0; hr < 24; hr++) html += `<span class="h">${hr % 3 === 0 ? hr : ""}</span>`;
+  h.grid.forEach((row, d) => {
+    html += `<span class="d">${h.labels[d]}</span>`;
+    row.forEach((v, hr) => {
+      const a = v ? 0.15 + 0.85 * Math.sqrt(v / max) : 0;
+      html += `<span class="c" title="${h.labels[d]}요일 ${hr}시 · ${tok(v)} 토큰" style="${v ? `background:rgba(217,119,87,${a.toFixed(2)})` : ""}"></span>`;
+    });
+  });
+  html += `</div></div><div class="heat-legend">적음 ${[0.15, 0.4, 0.7, 1].map(a => `<i style="background:rgba(217,119,87,${a})"></i>`).join("")} 많음</div>`;
+  $("heatmap").innerHTML = html;
+}
+
+function renderSessions(rows) {
+  $("sessionTable").innerHTML = `<tr><th>세션</th><th>프로젝트</th><th>시작</th><th class="r">길이</th><th class="r">요청</th><th class="r">토큰</th><th class="r">요청당 토큰</th><th class="r">캐시 적중</th><th class="r">추정 비용</th></tr>` +
+    (rows.length ? rows.map(s => {
+      const inputSide = s.input + s.cacheRead + s.cacheCreation;
+      const mins = Math.round((s.end - s.start) / 60000);
+      return `<tr><td class="muted">${esc(String(s.session_id).slice(0, 8))}</td>
+        <td>${String(s.project).split(",").map(p => `<span class="tag" style="background:${colorFor(p)}33">${esc(p)}</span>`).join(" ")}</td>
+        <td>${fmtDT(s.start)}</td><td class="r">${mins >= 60 ? Math.floor(mins / 60) + "시간 " + (mins % 60) + "분" : mins + "분"}</td>
+        <td class="r">${s.requests}</td><td class="r">${tok(s.tokens)}</td><td class="r">${tok(s.tokens / s.requests)}</td>
+        <td class="r">${inputSide ? Math.round(s.cacheRead / inputSide * 100) + "%" : "-"}</td><td class="r">${money(s.cost)}</td></tr>`;
+    }).join("") : `<tr><td colspan="9" class="muted">이번 주 세션 데이터가 없어요.</td></tr>`);
+}
+
+function render() {
+  if (!data) return;
+  krwPerUsd = data.krwPerUsd || krwPerUsd;
+  data.week.byProject.map(p => p.name).sort().forEach(colorFor);
+  renderSetup(data);
+  $("insights").innerHTML = data.insights.length ? data.insights.map(s => `<li>${esc(s)}</li>`).join("") : `<li class="muted">데이터가 쌓이면 분석이 표시돼요.</li>`;
+  $("fiveCard").innerHTML = limitCard(data.five, "5시간 한도");
+  $("sevenCard").innerHTML = limitCard(data.seven, "주간 한도 (7일)");
+  renderLastHour(data.lastHour);
+  renderHistory(data.history);
+  renderWeek(data.week);
+  renderModels(data.five);
+  renderHeatmap(data.heatmap);
+  renderSessions(data.sessions);
+}
+
+async function refresh() {
+  try { data = await fetch("/api/analysis").then(r => r.json()); render(); }
+  catch (e) { console.error(e); }
+}
+let timer = null;
+function scheduleRefresh() { clearTimeout(timer); timer = setTimeout(refresh, REFRESH_DEBOUNCE_MS); }
+
+function showToast(a) {
+  const isLimit = a.scope === "limit";
+  const name = isLimit ? (a.period === "five_hour" ? "5시간 한도" : "주간 한도") : (a.scope === "global" ? "전체 예산" : a.scope + " 예산");
+  const detail = isLimit ? `현재 ${Math.round(a.spent)}% 사용` : `${money(a.spent)} / ${money(a.budget)}`;
+  const el = $("toast");
+  el.innerHTML = `⚠️ <b>${esc(name)}</b> ${Math.round(a.threshold * 100)}% 도달<br>${detail}`;
+  el.style.display = "block";
+  setTimeout(() => (el.style.display = "none"), TOAST_MS);
+  if ("Notification" in window && Notification.permission === "granted") new Notification("Claude Code 알림", { body: `${name} ${Math.round(a.threshold * 100)}% 도달 · ${detail}` });
+}
+
+function connect() {
+  const es = new EventSource("/api/stream");
+  es.addEventListener("hello", () => { $("dot").classList.add("on"); $("liveText").textContent = "실시간"; });
+  es.addEventListener("usage", scheduleRefresh);
+  es.addEventListener("limits", scheduleRefresh);
+  es.addEventListener("alert", e => { showToast(JSON.parse(e.data)); scheduleRefresh(); });
+  es.onerror = () => { $("dot").classList.remove("on"); $("liveText").textContent = "재연결 중…"; };
+}
+
+$("currencyBtn").addEventListener("click", e => { useKrw = !useKrw; e.target.textContent = useKrw ? "달러로 보기" : "원화로 보기"; render(); });
+document.addEventListener("click", () => { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); }, { once: true });
+
+refresh();
+connect();
+setInterval(refresh, POLL_MS);
+setInterval(render, TICK_MS); // 리셋까지 남은 시간 표시 갱신
+</script>
+</body>
+</html>
