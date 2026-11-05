@@ -203,6 +203,24 @@ app.get("/api/recent", (req: Request, res: Response) => {
   res.json(recentRequests.all(clampInt(req.query.limit, DEFAULT_RECENT_LIMIT, MAX_RECENT_LIMIT)));
 });
 
+// ───────────────────────── Graphify 지도 ─────────────────────────
+// Only names listed in config.graphs are served, so the URL can never pick an arbitrary path.
+app.get("/api/graphs", (_req: Request, res: Response) => {
+  res.json(Object.keys(getConfig().graphs));
+});
+
+// /graph/<name> is graphify's own page; /graph/<name>/data is its graph.json for the readable group view.
+const GRAPH_FILES: Record<string, string> = { "": "graph.html", data: "graph.json" };
+app.get(["/graph/:name", "/graph/:name/:file"], (req: Request<{ name: string; file?: string }>, res: Response) => {
+  const graphs = getConfig().graphs;
+  const dir = Object.hasOwn(graphs, req.params.name) ? graphs[req.params.name] : undefined;
+  const file = GRAPH_FILES[req.params.file ?? ""];
+  if (!dir || !file) return void res.status(404).send("등록되지 않은 그래프입니다 (config.json graphs).");
+  res.sendFile(path.resolve(dir, file), (err) => {
+    if (err && !res.headersSent) res.status(404).send(`${file} 이 없습니다: ${dir} 에서 /graphify 를 먼저 실행하세요.`);
+  });
+});
+
 // ───────────────────────── 대시보드 ─────────────────────────
 app.use("/vendor", express.static(path.resolve(process.cwd(), "node_modules/chart.js/dist")));
 app.use(express.static(path.resolve(process.cwd(), "public")));

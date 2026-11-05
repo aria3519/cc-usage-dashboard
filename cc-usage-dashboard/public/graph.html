@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>프로젝트 지도 · Claude Code</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%23d97757'/%3E%3Ccircle cx='5' cy='5' r='2' fill='white'/%3E%3Ccircle cx='11' cy='7' r='2' fill='white'/%3E%3Ccircle cx='6' cy='12' r='2' fill='white'/%3E%3C/svg%3E" />
+<style>
+  :root { --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #e6e8ee; --muted: #8b93a7; --accent: #d97757; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); display: flex; flex-direction: column;
+         font: 14px/1.5 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 700; }
+  nav { display: flex; gap: 4px; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 8px; }
+  nav a.on { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+  .spacer { flex: 1; }
+  select, input, a.btn { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; font: inherit; text-decoration: none; }
+  .search { position: relative; }
+  .search input { width: 240px; }
+  .results { position: absolute; top: 100%; right: 0; left: 0; z-index: 5; margin-top: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; max-height: 320px; overflow: auto; display: none; }
+  .results button { display: block; width: 100%; text-align: left; background: none; border: 0; color: var(--text); padding: 6px 10px; font: inherit; cursor: pointer; }
+  .results button:hover { background: #1f2430; }
+  .results small { color: var(--muted); margin-left: 6px; }
+  main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
+  #map { position: relative; min-height: 0; }
+  #map svg { width: 100%; height: 100%; display: block; }
+  .hint { position: absolute; left: 16px; bottom: 12px; color: var(--muted); font-size: 12px; pointer-events: none; }
+  aside { border-left: 1px solid var(--line); overflow: auto; padding: 18px; }
+  aside h2 { margin: 0 0 4px; font-size: 18px; }
+  aside h3 { margin: 18px 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .file { margin-bottom: 10px; }
+  .file b { font-size: 12px; font-weight: 600; word-break: break-all; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .chip { background: #1f2430; border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 1px 8px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .chip:hover { border-color: var(--accent); }
+  .row { display: flex; align-items: center; gap: 8px; width: 100%; background: none; border: 0; color: var(--text); padding: 4px 0; font: inherit; cursor: pointer; text-align: left; }
+  .row .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .row .bar { flex: 1; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .row .bar i { display: block; height: 100%; background: var(--accent); }
+  .row .n { color: var(--muted); font-size: 12px; min-width: 28px; text-align: right; }
+  .row span.t { width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { margin: 40px auto; max-width: 560px; color: var(--muted); }
+  .empty code { background: var(--panel); padding: 1px 6px; border-radius: 4px; color: var(--text); }
+  g.grp { cursor: pointer; }
+  g.grp text { fill: var(--text); font-size: 12px; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
+  g.grp.dim { opacity: .18; }
+  line.e { stroke: #5b6478; }
+  line.e.dim { opacity: .05; }
+  line.e.hot { stroke: var(--accent); opacity: .9; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; } aside { border-left: 0; border-top: 1px solid var(--line); } .search input { width: 160px; } }
+  @media (max-width: 560px) { header { padding: 12px 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Claude Code 사용량</h1>
+  <nav><a href="/">개요</a><a href="/usage.html">사용량 분석</a><a href="/graph.html" class="on">프로젝트 지도</a></nav>
+  <span class="spacer"></span>
+  <select id="pick" aria-label="프로젝트" hidden></select>
+  <div class="search"><input id="q" placeholder="함수·파일 검색" autocomplete="off" aria-label="함수 또는 파일 검색" /><div class="results" id="results"></div></div>
+  <a class="btn" id="raw" target="_blank" rel="noopener" title="graphify 원본 그래프 (전체 노드)">원본 그래프</a>
+</header>
+<main id="main" hidden>
+  <div id="map"><svg id="svg"></svg><div class="hint">원 = 기능 그룹 (크기 = 함수 수) · 선 = 그룹 사이 호출 수 · 클릭하면 오른쪽에 내용</div></div>
+  <aside id="detail"></aside>
+</main>
+<p class="empty" id="empty" hidden></p>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const COLORS = ["#4f8cff", "#d97757", "#3fb950", "#d29922", "#a371f7", "#f778ba", "#39c5cf", "#e3b341", "#ff7b72", "#7ee787", "#79c0ff", "#ffa657"];
+let G; // { nodes, byId, groups, gEdges, adj }
+
+function build(raw) {
+  const nodes = raw.nodes, byId = new Map(nodes.map((n) => [n.id, n]));
+  const links = (raw.links || raw.edges || []).filter((l) => byId.has(l.source) && byId.has(l.target));
+  const groups = new Map();
+  for (const n of nodes) {
+    const g = groups.get(n.community) || { id: n.community, name: n.community_name || `그룹 ${n.community}`, members: [] };
+    g.members.push(n); groups.set(n.community, g);
+  }
+  const adj = new Map(nodes.map((n) => [n.id, { out: [], in: [] }]));
+  const pair = new Map();
+  for (const l of links) {
+    adj.get(l.source).out.push(l.target); adj.get(l.target).in.push(l.source);
+    const a = byId.get(l.source).community, b = byId.get(l.target).community;
+    if (a === b) continue;
+    const k = a < b ? `${a}|${b}` : `${b}|${a}`;
+    pair.set(k, (pair.get(k) || 0) + 1);
+  }
+  const gEdges = [...pair].map(([k, w]) => { const [a, b] = k.split("|").map(Number); return { a, b, w }; });
+  return { nodes, byId, groups, gEdges, adj };
+}
+
+// Small force layout for the ~50 group bubbles: repulsion, springs on cross-group calls, pull to the centre.
+function layout(groups, edges) {
+  const list = [...groups.values()];
+  list.forEach((g, i) => { const t = (i / list.length) * Math.PI * 2; g.r = 8 + Math.sqrt(g.members.length) * 3.6; g.x = Math.cos(t) * 300; g.y = Math.sin(t) * 300; });
+  const strong = edges.filter((e) => e.w >= 2);
+  for (let it = 0; it < 400; it++) {
+    const k = 1 - it / 400;
+    for (const a of list) for (const b of list) {
+      if (a === b) continue;
+      const dx = a.x - b.x, dy = a.y - b.y, d = Math.max(1, Math.hypot(dx, dy)), min = a.r + b.r + 30;
+      const f = (d < min ? (min - d) * 0.5 : 0) + 2200 / (d * d);
+      a.x += (dx / d) * f * k; a.y += (dy / d) * f * k;
+    }
+    for (const e of strong) {
+      const a = groups.get(e.a), b = groups.get(e.b), dx = b.x - a.x, dy = b.y - a.y, d = Math.max(1, Math.hypot(dx, dy));
+      const f = (d - (a.r + b.r + 60)) * 0.004 * Math.log2(1 + e.w) * k;
+      a.x += (dx / d) * f; a.y += (dy / d) * f; b.x -= (dx / d) * f; b.y -= (dy / d) * f;
+    }
+    for (const g of list) { g.x *= 1 - 0.01 * k; g.y *= 1 - 0.01 * k; }
+  }
+}
+
+function draw() {
+  const { groups, gEdges } = G, list = [...groups.values()];
+  const pad = 60, xs = list.flatMap((g) => [g.x - g.r, g.x + g.r]), ys = list.flatMap((g) => [g.y - g.r, g.y + g.r + 18]);
+  const vb = [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) - Math.min(...xs) + pad * 2, Math.max(...ys) - Math.min(...ys) + pad * 2];
+  const maxW = Math.max(1, ...gEdges.map((e) => e.w));
+  const shown = gEdges.filter((e) => e.w >= 2).sort((a, b) => b.w - a.w).slice(0, 120);
+  $("svg").setAttribute("viewBox", vb.join(" "));
+  $("svg").innerHTML =
+    shown.map((e) => { const a = groups.get(e.a), b = groups.get(e.b); return `<line class="e" data-a="${e.a}" data-b="${e.b}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke-width="${(0.6 + 5 * Math.sqrt(e.w / maxW)).toFixed(2)}" opacity="${(0.25 + 0.55 * Math.sqrt(e.w / maxW)).toFixed(2)}"/>`; }).join("") +
+    list.map((g, i) => `<g class="grp" data-id="${g.id}" tabindex="0" role="button" aria-label="${esc(g.name)}"><circle cx="${g.x}" cy="${g.y}" r="${g.r}" fill="${color(g.id)}" fill-opacity=".85" stroke="#0f1115" stroke-width="2"/><text x="${g.x}" y="${g.y + g.r + 14}">${esc(g.name)} · ${g.members.length}</text></g>`).join("");
+  for (const el of $("svg").querySelectorAll("g.grp")) {
+    const id = Number(el.dataset.id);
+    el.onclick = () => showGroup(id);
+    el.onkeydown = (ev) => { if (ev.key === "Enter") showGroup(id); };
+  }
+}
+
+const color = (id) => COLORS[Number(id) % COLORS.length];
+
+function highlight(id) {
+  const near = new Set([id, ...G.gEdges.filter((e) => e.a === id || e.b === id).map((e) => (e.a === id ? e.b : e.a))]);
+  for (const el of $("svg").querySelectorAll("g.grp")) el.classList.toggle("dim", id !== null && !near.has(Number(el.dataset.id)));
+  for (const el of $("svg").querySelectorAll("line.e")) {
+    const hot = id !== null && (Number(el.dataset.a) === id || Number(el.dataset.b) === id);
+    el.classList.toggle("hot", hot); el.classList.toggle("dim", id !== null && !hot);
+  }
+}
+
+const fileOf = (n) => n.source_file || "(파일 없음)";
+const nodeChip = (n) => `<button class="chip" data-node="${esc(n.id)}" title="${esc(fileOf(n))}">${esc(n.label)}</button>`;
+
+function showGroup(id) {
+  const g = G.groups.get(id);
+  highlight(id);
+  const files = new Map();
+  for (const n of g.members) { const f = fileOf(n); files.set(f, [...(files.get(f) || []), n]); }
+  const links = G.gEdges.filter((e) => e.a === id || e.b === id).map((e) => ({ other: e.a === id ? e.b : e.a, w: e.w })).sort((a, b) => b.w - a.w);
+  const maxW = Math.max(1, ...links.map((l) => l.w));
+  const degree = (n) => G.adj.get(n.id).in.length + G.adj.get(n.id).out.length;
+  const top = [...g.members].sort((a, b) => degree(b) - degree(a)).slice(0, 8);
+  $("detail").innerHTML = `<h2><span style="color:${color(id)}">●</span> ${esc(g.name)}</h2><div class="sub">함수·항목 ${g.members.length}개 · 파일 ${files.size}개</div>
+    <h3>가장 많이 연결된 것</h3><div class="chips">${top.map(nodeChip).join("")}</div>
+    <h3>연결된 그룹</h3>${links.length ? links.slice(0, 12).map((l) => `<button class="row" data-group="${l.other}"><span class="dot" style="background:${color(l.other)}"></span><span class="t">${esc(G.groups.get(l.other).name)}</span><span class="bar"><i style="width:${(100 * l.w) / maxW}%"></i></span><span class="n">${l.w}</span></button>`).join("") : '<div class="sub">다른 그룹과 연결 없음</div>'}
+    <h3>파일별 내용</h3>${[...files].sort((a, b) => b[1].length - a[1].length).map(([f, ns]) => `<div class="file"><b>${esc(f)}</b> <span class="sub">${ns.length}</span><div class="chips">${ns.map(nodeChip).join("")}</div></div>`).join("")}`;
+  bindDetail();
+}
+
+function showNode(nid) {
+  const n = G.byId.get(nid), a = G.adj.get(nid);
+  highlight(n.community);
+  const list = (ids) => [...new Set(ids)].map((x) => G.byId.get(x)).filter(Boolean);
+  const outs = list(a.out), ins = list(a.in);
+  $("detail").innerHTML = `<h2>${esc(n.label)}</h2><div class="sub">${esc(fileOf(n))}${n.source_location ? `:${esc(String(n.source_location).replace(/^L/, ""))}` : ""}</div>
+    <h3>그룹</h3><button class="row" data-group="${n.community}"><span class="dot" style="background:${color(n.community)}"></span><span class="t">${esc(G.groups.get(n.community).name)}</span></button>
+    <h3>이것이 쓰는 것 (${outs.length})</h3><div class="chips">${outs.map(nodeChip).join("") || '<span class="sub">없음</span>'}</div>
+    <h3>이것을 쓰는 곳 (${ins.length})</h3><div class="chips">${ins.map(nodeChip).join("") || '<span class="sub">없음</span>'}</div>`;
+  bindDetail();
+}
+
+function bindDetail() {
+  for (const el of $("detail").querySelectorAll("[data-node]")) el.onclick = () => showNode(el.dataset.node);
+  for (const el of $("detail").querySelectorAll("[data-group]")) el.onclick = () => showGroup(Number(el.dataset.group));
+}
+
+function overview() {
+  highlight(null);
+  const list = [...G.groups.values()].sort((a, b) => b.members.length - a.members.length);
+  const max = list[0]?.members.length || 1;
+  $("detail").innerHTML = `<h2>기능 그룹 ${list.length}개</h2><div class="sub">함수·항목 ${G.nodes.length}개 · 그룹을 누르면 내용이 보입니다</div><h3>큰 그룹부터</h3>` +
+    list.map((g) => `<button class="row" data-group="${g.id}"><span class="dot" style="background:${color(g.id)}"></span><span class="t">${esc(g.name)}</span><span class="bar"><i style="width:${(100 * g.members.length) / max}%"></i></span><span class="n">${g.members.length}</span></button>`).join("");
+  bindDetail();
+}
+
+$("q").oninput = () => {
+  const q = $("q").value.trim().toLowerCase(), box = $("results");
+  if (!G || q.length < 2) { box.style.display = "none"; return; }
+  const hits = G.nodes.filter((n) => String(n.label).toLowerCase().includes(q) || fileOf(n).toLowerCase().includes(q)).slice(0, 20);
+  box.innerHTML = hits.map((n) => `<button data-node="${esc(n.id)}">${esc(n.label)}<small>${esc(fileOf(n))}</small></button>`).join("") || '<button disabled>결과 없음</button>';
+  box.style.display = "block";
+  for (const el of box.querySelectorAll("[data-node]")) el.onclick = () => { box.style.display = "none"; showNode(el.dataset.node); };
+};
+document.addEventListener("click", (ev) => { if (!ev.target.closest(".search")) $("results").style.display = "none"; });
+$("svg").addEventListener("click", (ev) => { if (!ev.target.closest("g.grp")) overview(); });
+
+async function load(name) {
+  try { localStorage.setItem("graphPick", name); } catch {}
+  $("raw").href = "/graph/" + encodeURIComponent(name);
+  const res = await fetch("/graph/" + encodeURIComponent(name) + "/data");
+  if (!res.ok) { $("main").hidden = true; $("empty").hidden = false; $("empty").textContent = await res.text(); return; }
+  G = build(await res.json());
+  layout(G.groups, G.gEdges);
+  $("empty").hidden = true; $("main").hidden = false;
+  draw(); overview();
+}
+
+fetch("/api/graphs").then((r) => r.json()).then((names) => {
+  if (!names.length) { $("empty").hidden = false; $("empty").innerHTML = '등록된 그래프가 없습니다. <code>config.json</code>의 <code>graphs</code>에 <code>"이름": "graphify-out 폴더 경로"</code>를 추가하세요.'; return; }
+  const pick = $("pick");
+  for (const n of names) pick.add(new Option(n, n));
+  let saved = null;
+  try { saved = localStorage.getItem("graphPick"); } catch {}
+  if (names.includes(saved)) pick.value = saved;
+  pick.hidden = names.length < 2;
+  pick.onchange = () => load(pick.value);
+  load(pick.value);
+});
+</script>
+</body>
+</html>
