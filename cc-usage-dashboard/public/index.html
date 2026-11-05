@@ -52,6 +52,10 @@
   .alert.bad { border-color: var(--bad); background: #22141a; }
   .alert time { color: var(--muted); font-size: 12px; display: block; }
   .empty { color: var(--muted); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 999px;
+          padding: 3px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .chip.off { color: var(--muted); text-decoration: line-through; opacity: .55; }
   #toast { position: fixed; right: 20px; bottom: 20px; max-width: 360px; padding: 12px 14px; border-radius: 10px;
            background: #22141a; border: 1px solid var(--bad); display: none; z-index: 10; }
 </style>
@@ -70,6 +74,8 @@
   <div class="card kpi"><h2>이번 달 비용</h2><div class="v" id="kMonth">-</div><div class="s" id="kMonthSub"></div></div>
   <div class="card kpi"><h2>오늘 토큰</h2><div class="v" id="kTokens">-</div><div class="s" id="kTokensSub"></div></div>
   <div class="card kpi"><h2>오늘 요청 수</h2><div class="v" id="kReq">-</div><div class="s" id="kReqSub"></div></div>
+
+  <div class="card w12"><h2>표시할 프로젝트 (눌러서 빼기·넣기 — 전체 합계에는 그대로 포함)</h2><div class="chips" id="projectToggles"></div></div>
 
   <div class="card w8"><h2>일별 비용 (프로젝트별, 최근 30일)</h2><div class="chart"><canvas id="dailyChart"></canvas></div></div>
   <div class="card w4"><h2>예산</h2><div id="budgets"></div></div>
@@ -94,6 +100,15 @@ let useKrw = false;
 let krwPerUsd = 1400;
 const projectColor = new Map();
 const charts = {};
+// Projects the viewer hid (per browser; usage.html reads the same key).
+const HIDDEN_KEY = "hiddenProjects";
+const hidden = new Set((() => { try { return JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]"); } catch { return []; } })());
+const shown = p => !hidden.has(p);
+function toggleProject(p) {
+  hidden.has(p) ? hidden.delete(p) : hidden.add(p);
+  try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden])); } catch {}
+  render();
+}
 
 Chart.defaults.color = "#8b93a7";
 Chart.defaults.borderColor = "#262b36";
@@ -158,7 +173,7 @@ function renderSummary(s) {
   document.getElementById("kReq").textContent = t.requests.toLocaleString();
   document.getElementById("kReqSub").textContent = t.requests ? `평균 ${money(t.cost / t.requests)}/요청` : "";
 
-  document.getElementById("budgets").innerHTML = s.budgets.map(b => `
+  document.getElementById("budgets").innerHTML = s.budgets.filter(b => b.scope === "global" || shown(b.scope)).map(b => `
     <div class="budget">
       <div class="row"><span class="name"><span class="tag" style="background:${b.scope === "global" ? "var(--line)" : colorFor(b.scope)}33">${esc(scopeName(b.scope))}</span></span></div>
       ${budgetBar("오늘", b.daily.spent, b.daily.limit)}
@@ -191,7 +206,7 @@ function renderSummary(s) {
 }
 
 function renderTimeseries(ts) {
-  const projects = [...new Set(ts.daily.map(d => d.project))].sort();
+  const projects = [...new Set(ts.daily.map(d => d.project))].filter(shown).sort();
   const idx = new Map(ts.days.map((d, i) => [d, i]));
   const datasets = projects.map(p => {
     const data = new Array(ts.days.length).fill(0);
@@ -205,7 +220,8 @@ function renderTimeseries(ts) {
       maintainAspectRatio: false,
       scales: { x: { stacked: true, grid: { display: false } }, y: { stacked: true, ticks: { callback: v => money(v) } } },
       plugins: {
-        legend: { labels: { boxWidth: 10 } },
+        // Chart.js's own legend hiding is lost on every redraw (each usage event), so a click hides the project for good.
+        legend: { labels: { boxWidth: 10 }, onClick: (_e, item) => toggleProject(item.text) },
         tooltip: { mode: "index", callbacks: { label: c => `${c.dataset.label}: ${money(c.raw)}` } },
       },
     },
@@ -240,6 +256,7 @@ function renderTimeseries(ts) {
 }
 
 function renderRecent(rows) {
+  rows = rows.filter(r => shown(r.project));
   const head = `<tr><th>시각</th><th>프로젝트</th><th>모델</th><th class="r">입력</th><th class="r">출력</th>
                 <th class="r">캐시읽기</th><th class="r">비용</th><th class="r">소요</th></tr>`;
   document.getElementById("recent").innerHTML = head + (rows.length ? rows.map(r => `
@@ -271,6 +288,10 @@ function render() {
   if (!lastData) return;
   // 프로젝트 색을 항상 같은 순서로 배정
   [...new Set(lastData.summary.budgets.map(b => b.scope).filter(s => s !== "global"))].sort().forEach(colorFor);
+  const all = [...new Set([...lastData.summary.budgets.map(b => b.scope).filter(s => s !== "global"), ...lastData.ts.daily.map(d => d.project)])].sort();
+  const box = document.getElementById("projectToggles");
+  box.innerHTML = all.map(p => `<button class="chip ${shown(p) ? "" : "off"}" aria-pressed="${shown(p)}" data-p="${esc(p)}">${esc(p)}</button>`).join("");
+  box.querySelectorAll(".chip").forEach(b => b.addEventListener("click", () => toggleProject(b.dataset.p)));
   renderSummary(lastData.summary);
   renderTimeseries(lastData.ts);
   renderRecent(lastData.recent);

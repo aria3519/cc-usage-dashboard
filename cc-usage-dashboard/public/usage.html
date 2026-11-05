@@ -130,6 +130,8 @@ const POLL_MS = 30000, REFRESH_DEBOUNCE_MS = 400, TOAST_MS = 8000, TICK_MS = 300
 let useKrw = false, krwPerUsd = 1400, data = null;
 const charts = {};
 const projectColor = new Map();
+// Hidden on the overview page's project toggles (same browser storage key).
+const hiddenProjects = new Set((() => { try { return JSON.parse(localStorage.getItem("hiddenProjects") || "[]"); } catch { return []; } })());
 
 Chart.defaults.color = "#8b93a7";
 Chart.defaults.borderColor = "#262b36";
@@ -323,7 +325,7 @@ function renderWeek(wk) {
 
   const total = t.tokens || 1;
   $("projTable").innerHTML = `<tr><th>프로젝트</th><th>비중</th><th class="r">토큰</th><th class="r">출력</th><th class="r">요청</th><th class="r">추정 비용</th><th>요일별</th></tr>` +
-    (wk.byProject.length ? wk.byProject.map(p => {
+    (wk.byProject.length ? wk.byProject.filter(p => !hiddenProjects.has(p.name)).map(p => {
       const share = p.tokens / total, max = Math.max(...p.daily, 1);
       const spark = p.daily.map((v, i) => `<i title="${wk.labels[i]} ${tok(v)}" style="display:inline-block;width:6px;margin-right:2px;height:${Math.max(2, v / max * 18)}px;background:${i <= wk.todayIndex ? colorFor(p.name) : "#3a4152"};vertical-align:bottom;border-radius:1px"></i>`).join("");
       return `<tr><td><span class="tag" style="background:${colorFor(p.name)}33">${esc(p.name)}</span></td>

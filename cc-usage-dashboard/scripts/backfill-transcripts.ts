@@ -22,6 +22,21 @@ const BASE: Record<string, [number, number, number]> = {
 const priceFor = (model: string) =>
   Object.keys(BASE).sort((a, b) => b.length - a.length).find((k) => model.startsWith(k));
 
+// A session started in a subfolder (crpg-studio/app/_lib) counts for its project: the nearest folder up with a
+// package.json or .git. Git Bash paths (/f/github/...) are read as F:/github/...; no such folder → the cwd's own name.
+const projectCache = new Map<string, string>();
+function projectOf(cwd: string): string {
+  if (projectCache.has(cwd)) return projectCache.get(cwd)!;
+  const start = path.resolve(cwd.replace(/^\/([a-zA-Z])\//, "$1:/"));
+  let name = path.basename(start);
+  for (let dir = start; ; dir = path.dirname(dir)) {
+    if (fs.existsSync(path.join(dir, "package.json")) || fs.existsSync(path.join(dir, ".git"))) { name = path.basename(dir); break; }
+    if (path.dirname(dir) === dir) break;
+  }
+  projectCache.set(cwd, name);
+  return name;
+}
+
 function* jsonlFiles(dir: string): Generator<string> {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
@@ -56,7 +71,7 @@ for (const file of jsonlFiles(path.join(os.homedir(), ".claude", "projects"))) {
     const k = timeKeys(ts, tz);
     rows.push({
       ts, day_key: k.day, month_key: k.month, hour_key: k.hour,
-      project: e.cwd ? path.basename(e.cwd) : "미지정",
+      project: e.cwd ? projectOf(e.cwd) : "미지정",
       model: m.model, session_id: TAG + (e.sessionId ?? path.basename(file, ".jsonl")), user_email: null,
       cost_usd: (input * pin + output * pout + read * pread + w5 * pin * 1.25 + w1 * pin * 2) / 1e6,
       input_tokens: input, output_tokens: output, cache_read_tokens: read, cache_creation_tokens: w5 + w1,

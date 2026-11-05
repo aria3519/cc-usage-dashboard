@@ -7,7 +7,7 @@
   "discordWebhookUrl": "",
   "graphs": { "crpg-studio": "F:/github/crpg2-studio-local/crpg-studio/graphify-out" },
   "budgets": {
-    "global": { "daily": 10, "monthly": 150 },
+    "global": { "daily": 100, "monthly": 400 },
     "projects": {
       "STB": { "daily": 5, "monthly": 60 },
       "AIO": { "daily": 3, "monthly": 40 }
