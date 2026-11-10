@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenAI 호출 · crpg-studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='4' fill='%23d97757'/%3E%3Crect x='3' y='8' width='2' height='5' fill='white'/%3E%3Crect x='7' y='5' width='2' height='8' fill='white'/%3E%3Crect x='11' y='3' width='2' height='10' fill='white'/%3E%3C/svg%3E" />
+<script src="/vendor/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --line: #262b36; --text: #e6e8ee; --muted: #8b93a7;
+    --accent: #d97757; --blue: #4f8cff; --ok: #3fb950; --warn: #d29922; --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 700; }
+  nav { display: flex; gap: 4px; }
+  nav a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 8px; }
+  nav a.on { background: var(--panel); color: var(--text); border: 1px solid var(--line); }
+  .live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .spacer { flex: 1; }
+  button.toggle { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+                  border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; }
+  main { padding: 20px 24px; display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); max-width: 1400px; margin: 0 auto; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+  .card h2 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 0 0 12px; display: flex; justify-content: space-between; gap: 8px; }
+  .card h2 small { font-weight: 400; }
+  .w2 { grid-column: span 2; } .w3 { grid-column: span 3; } .w4 { grid-column: span 4; } .w5 { grid-column: span 5; } .w6 { grid-column: span 6; }
+  .w7 { grid-column: span 7; } .w8 { grid-column: span 8; } .w12 { grid-column: span 12; }
+  @media (max-width: 1000px) { .w3 { grid-column: span 6; } .w2, .w4, .w5, .w6, .w7, .w8 { grid-column: span 12; } }
+  @media (max-width: 560px) { main { padding: 16px; } .w3 { grid-column: span 12; } .stats { grid-template-columns: 1fr 1fr; }
+    .gauge-legend { flex-direction: column; gap: 2px; } header { padding: 12px 16px; } }
+  .chart { position: relative; height: 260px; }
+  .muted { color: var(--muted); }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* 인사이트 */
+  .insights { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .insights li { padding: 8px 12px; background: #1c2029; border-radius: 8px; font-size: 13px; }
+
+  /* 한도 카드 */
+  .limit .big { font-size: 40px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .limit .big small { font-size: 16px; color: var(--muted); font-weight: 500; margin-left: 6px; }
+  .gauge { position: relative; height: 14px; background: var(--line); border-radius: 7px; margin: 14px 0 6px; overflow: visible; }
+  .gauge > .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px; transition: width .4s; }
+  .gauge > .proj { position: absolute; top: 0; bottom: 0; border-radius: 7px; opacity: .35; }
+  .gauge > .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text); }
+  .gauge-legend { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 16px; margin-top: 14px; }
+  .stats div span { display: block; color: var(--muted); font-size: 12px; }
+  .stats div b { font-size: 15px; font-variant-numeric: tabular-nums; }
+  .warnbox { margin-top: 12px; padding: 8px 10px; border-radius: 8px; font-size: 13px; background: #22141a; border-left: 3px solid var(--bad); }
+  .okbox { margin-top: 12px; padding: 8px 10px; border-radius: 8px; font-size: 13px; background: #13201a; border-left: 3px solid var(--ok); }
+  .infobox { padding: 10px 12px; border-radius: 8px; font-size: 13px; background: #1c2029; border-left: 3px solid var(--blue); }
+  .infobox code { background: var(--bg); padding: 1px 6px; border-radius: 4px; }
+
+  /* KPI */
+  .kpi .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .kpi .s { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .up { color: var(--warn); } .down { color: var(--ok); }
+
+  /* 표 */
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.r, th.r { text-align: right; }
+  .tbl { overflow-x: auto; }
+  .share { display: inline-block; height: 6px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--line); }
+
+  /* 히트맵 */
+  .heat-wrap { overflow-x: auto; }
+  .heat { display: grid; grid-template-columns: 24px repeat(24, minmax(10px, 1fr)); gap: 3px; font-size: 11px; min-width: 330px; }
+  .heat .c { height: 20px; border-radius: 3px; background: var(--line); }
+  .heat .h { color: var(--muted); text-align: center; }
+  .heat .d { color: var(--muted); display: flex; align-items: center; }
+  .heat-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-top: 10px; justify-content: flex-end; }
+  .heat-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  #toast { position: fixed; right: 20px; bottom: 20px; max-width: 360px; padding: 12px 14px; border-radius: 10px;
+           background: #22141a; border: 1px solid var(--bad); display: none; z-index: 10; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Claude Code 사용량</h1>
+  <nav><a href="/">개요</a><a href="/usage.html">사용량 분석</a><a href="/openai.html" class="on">OpenAI (crpg)</a></nav>
+  <span class="live"><span id="dot" class="dot"></span><span id="liveText">연결 중…</span></span>
+  <span class="spacer"></span>
+  <select class="toggle" id="daysSel" aria-label="기간">
+    <option value="1">오늘 포함 1일</option><option value="7" selected>최근 7일</option><option value="30">최근 30일</option>
+  </select>
+  <button class="toggle" id="currencyBtn">원화로 보기</button>
+</header>
+
+<main>
+  <div class="card w12" id="priceWarn" style="display:none"></div>
+  <div class="card w3 kpi"><h2>호출 수</h2><div class="v" id="kCalls">-</div><div class="s" id="kCallsS"></div></div>
+  <div class="card w3 kpi"><h2>예상 비용</h2><div class="v" id="kCost">-</div><div class="s" id="kCostS"></div></div>
+  <div class="card w3 kpi"><h2>토큰 (입력 / 출력)</h2><div class="v" id="kTok">-</div><div class="s" id="kTokS"></div></div>
+  <div class="card w3 kpi"><h2>평균 응답 시간</h2><div class="v" id="kMs">-</div><div class="s" id="kMsS"></div></div>
+
+  <div class="card w8"><h2>일별 호출 수 <small class="muted">모델별</small></h2><div class="chart"><canvas id="dailyChart"></canvas></div></div>
+  <div class="card w4"><h2>최근 24시간 <small class="muted">시간당 호출</small></h2><div class="chart"><canvas id="hourChart"></canvas></div></div>
+
+  <div class="card w12"><h2>모델별</h2><div class="tbl"><table id="modelTable"></table></div></div>
+  <div class="card w12"><h2>용도별 <small class="muted">라우트 · 호출 용도 · 모델, 호출 많은 순</small></h2><div class="tbl"><table id="tagTable"></table></div></div>
+  <div class="card w12"><h2>최근 호출 100건</h2><div class="tbl"><table id="recentTable"></table></div></div>
+</main>
+
+<script>
+const PALETTE = ["#d97757", "#4f8cff", "#3fb950", "#c678dd", "#d29922", "#2bb3b3", "#f85149", "#8b93a7"];
+const POLL_MS = 30000, REFRESH_DEBOUNCE_MS = 400;
+// Purpose tags sent by crpg-studio (x-usage-tag header) → what the call is for.
+const TAGS = {
+  scene: "장면 진행 (본 호출)", talk: "NPC 대화 (본 호출)", combat: "전투 묘사 (본 호출)",
+  voices: "NPC 말투 배정", "talk-retry": "대화 대사 재시도", "talk-rewrite": "대화 다시 쓰기 (말투)",
+  "choices-redo": "행동 선택지 다시 만들기", "talk-refill": "대화 대사 선택지 보충", "talk-redo": "대화 대사 선택지 다시 만들기 (반복)",
+  "speech-fix": "장면 말투 교정", "talk-speech-fix": "대화 말투 교정", "accept-line": "퀘스트 수락 대사",
+};
+let useKrw = false, krwPerUsd = 1400, data = null, days = 7;
+const charts = {}, modelColor = new Map();
+
+Chart.defaults.color = "#8b93a7";
+Chart.defaults.borderColor = "#262b36";
+Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const colorFor = n => { if (!modelColor.has(n)) modelColor.set(n, PALETTE[modelColor.size % PALETTE.length]); return modelColor.get(n); };
+const money = usd => useKrw ? Math.round(usd * krwPerUsd).toLocaleString("ko-KR") + "원" : "$" + usd.toFixed(usd > 0 && usd < 1 ? 4 : 2);
+const tok = n => n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : String(Math.round(n || 0));
+const sec = ms => (ms / 1000).toFixed(1) + "초";
+const tagName = (route, tag) => (route === "gm" && TAGS[tag]) || (tag ? `${route} · ${tag}` : route);
+const fmtDT = ms => new Date(ms).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function upsertChart(id, config) {
+  if (charts[id]) { charts[id].data = config.data; charts[id].options = config.options; charts[id].update("none"); }
+  else charts[id] = new Chart($(id), config);
+}
+// Adds one grouped row into the bucket keyed by k.
+function sumInto(map, k, r, extra) {
+  const b = map.get(k) || { ...extra, calls: 0, errors: 0, input: 0, cached: 0, output: 0, ms: 0, maxMs: 0, cost: 0, priced: true };
+  for (const f of ["calls", "errors", "input", "cached", "output", "ms", "cost"]) b[f] += r[f] || 0;
+  b.maxMs = Math.max(b.maxMs, r.maxMs || 0); b.priced = b.priced && r.priced;
+  map.set(k, b); return b;
+}
+const costCell = b => b.priced ? money(b.cost) : `<span class="muted" title="config.json openaiPrices에 가격이 없습니다">가격 미설정</span>`;
+
+function render() {
+  if (!data) return;
+  const rows = data.rows;
+  // sumInto returns the bucket, not the map, so the total is gathered in a map of its own.
+  const totals = new Map();
+  for (const r of rows) sumInto(totals, "all", r, {});
+  const all = totals.get("all") || { calls: 0, errors: 0, input: 0, cached: 0, output: 0, ms: 0, cost: 0 };
+  $("kCalls").textContent = all.calls.toLocaleString("ko-KR");
+  $("kCallsS").innerHTML = all.errors ? `<span class="up">실패 ${all.errors}건</span>` : "실패 없음";
+  $("kCost").textContent = money(all.cost);
+  $("kCostS").textContent = all.calls ? `호출당 ${money(all.cost / all.calls)}` : "";
+  $("kTok").textContent = `${tok(all.input)} / ${tok(all.output)}`;
+  $("kTokS").textContent = all.input ? `캐시 적중 ${Math.round(all.cached / all.input * 100)}%` : "";
+  $("kMs").textContent = all.calls ? sec(all.ms / all.calls) : "-";
+  $("kMsS").textContent = `최근 ${data.days}일`;
+
+  const pw = $("priceWarn");
+  pw.style.display = data.unpriced.length ? "" : "none";
+  pw.innerHTML = `<div class="infobox">가격을 모르는 모델이 있어 비용에서 빠졌습니다: <b>${data.unpriced.map(esc).join(", ")}</b>. <code>config.json</code>의 <code>openaiPrices</code>에 1M 토큰당 USD를 넣으면 지난 호출까지 다시 계산됩니다.</div>`;
+
+  const models = [...new Set(rows.map(r => r.model))].sort();
+  const byDayModel = new Map(), byHour = new Map();
+  for (const r of rows) {
+    byDayModel.set(r.day + "|" + r.model, (byDayModel.get(r.day + "|" + r.model) || 0) + r.calls);
+    byHour.set(r.hour, (byHour.get(r.hour) || 0) + r.calls);
+  }
+  upsertChart("dailyChart", {
+    type: "bar",
+    data: { labels: data.dayLabels.map(d => d.slice(5)), datasets: models.map(m => ({ label: m, backgroundColor: colorFor(m), data: data.dayLabels.map(d => byDayModel.get(d + "|" + m) || 0) })) },
+    options: { maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { position: "bottom" } } },
+  });
+  upsertChart("hourChart", {
+    type: "bar",
+    data: { labels: data.hourLabels.map(h => h.slice(-2) + "시"), datasets: [{ label: "호출", backgroundColor: "#4f8cff", data: data.hourLabels.map(h => byHour.get(h) || 0) }] },
+    options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { display: false } } },
+  });
+
+  const byModel = new Map();
+  for (const r of rows) sumInto(byModel, r.model, r, { model: r.model });
+  $("modelTable").innerHTML = `<tr><th>모델</th><th class="r">호출</th><th class="r">비중</th><th class="r">입력</th><th class="r">출력</th><th class="r">평균 시간</th><th class="r">비용</th></tr>` +
+    ([...byModel.values()].sort((a, b) => b.calls - a.calls).map(b => `<tr><td><span class="share" style="width:10px;background:${colorFor(b.model)}"></span>${esc(b.model)}</td><td class="r">${b.calls}</td><td class="r">${Math.round(b.calls / all.calls * 100)}%</td><td class="r">${tok(b.input)}</td><td class="r">${tok(b.output)}</td><td class="r">${sec(b.ms / b.calls)}</td><td class="r">${costCell(b)}</td></tr>`).join("") ||
+    `<tr><td class="muted" colspan="7">아직 기록이 없습니다. crpg-studio dev 서버를 재시작한 뒤 플레이하면 쌓입니다.</td></tr>`);
+
+  const byTag = new Map();
+  for (const r of rows) sumInto(byTag, r.route + "|" + r.tag + "|" + r.model, r, { route: r.route, tag: r.tag, model: r.model });
+  $("tagTable").innerHTML = `<tr><th>용도</th><th>라우트</th><th>모델</th><th class="r">호출</th><th class="r">평균 입력</th><th class="r">평균 출력</th><th class="r">평균 시간</th><th class="r">최대 시간</th><th class="r">실패</th><th class="r">비용</th></tr>` +
+    [...byTag.values()].sort((a, b) => b.calls - a.calls).map(b => `<tr><td>${esc(tagName(b.route, b.tag))}</td><td class="muted">${esc(b.route)}</td><td><span class="tag">${esc(b.model)}</span></td><td class="r">${b.calls}</td><td class="r">${tok(b.input / b.calls)}</td><td class="r">${tok(b.output / b.calls)}</td><td class="r">${sec(b.ms / b.calls)}</td><td class="r">${sec(b.maxMs)}</td><td class="r">${b.errors || ""}</td><td class="r">${costCell(b)}</td></tr>`).join("");
+
+  $("recentTable").innerHTML = `<tr><th>시각</th><th>용도</th><th>모델</th><th class="r">입력</th><th class="r">출력</th><th class="r">시간</th><th>상태</th></tr>` +
+    data.recent.map(r => `<tr><td>${fmtDT(r.ts)}</td><td>${esc(tagName(r.route, r.tag))}</td><td>${esc(r.model)}</td><td class="r">${tok(r.input_tokens)}</td><td class="r">${tok(r.output_tokens)}</td><td class="r">${sec(r.duration_ms)}</td><td>${r.ok ? "" : `<span class="up">실패 ${r.status || ""}</span>`}</td></tr>`).join("");
+}
+
+async function refresh() {
+  try {
+    data = await (await fetch(`/api/openai/summary?days=${days}`)).json();
+    krwPerUsd = data.krwPerUsd || krwPerUsd;
+    render();
+  } catch (err) { console.error(err); }
+}
+let refreshTimer = null;
+const scheduleRefresh = () => { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, REFRESH_DEBOUNCE_MS); };
+
+function connect() {
+  const es = new EventSource("/api/stream");
+  es.addEventListener("hello", () => { $("dot").classList.add("on"); $("liveText").textContent = "실시간"; });
+  es.addEventListener("openai", scheduleRefresh);
+  es.onerror = () => { $("dot").classList.remove("on"); $("liveText").textContent = "재연결 중…"; };
+}
+
+$("currencyBtn").addEventListener("click", e => { useKrw = !useKrw; e.target.textContent = useKrw ? "달러로 보기" : "원화로 보기"; render(); });
+$("daysSel").addEventListener("change", e => { days = Number(e.target.value); refresh(); });
+
+refresh();
+connect();
+setInterval(refresh, POLL_MS);
+</script>
+</body>
+</html>

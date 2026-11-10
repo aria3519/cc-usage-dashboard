@@ -5,7 +5,16 @@
   "alertThresholds": [0.5, 0.8, 1.0],
   "limitAlertThresholds": [0.5, 0.8, 0.95],
   "discordWebhookUrl": "",
-  "graphs": { "crpg-studio": "F:/github/crpg2-studio-local/crpg-studio/graphify-out" },
+  "openaiPrices": {
+    "gpt-4.1-mini": { "input": 0.4, "cached": 0.1, "output": 1.6 },
+    "gpt-4.1": { "input": 2, "cached": 0.5, "output": 8 },
+    "gpt-image-1": { "input": 5, "cached": 1.25, "output": 40 },
+    "gpt-6-astra": { "perCall": 0.175 },
+    "gpt-6.1-sol": { "perCall": 0.035 },
+    "gpt-6.1-terra": { "perCall": 0.0175 },
+    "gpt-6-luna": { "perCall": 0.0018 },
+    "gpt-5.6": { "perCall": 0.07 }
+  },
   "budgets": {
     "global": { "daily": 100, "monthly": 400 },
     "projects": {

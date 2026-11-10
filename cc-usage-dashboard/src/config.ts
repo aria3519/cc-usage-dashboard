@@ -14,8 +14,9 @@ export interface AppConfig {
   /** 구독 한도(5시간/7일) 알림 단계 — 사용률 기준 (0.8 = 80%) */
   limitAlertThresholds: number[];
   discordWebhookUrl: string;
-  /** Graphify 지도 탭: 이름 → graphify-out 폴더 경로 */
-  graphs: Record<string, string>;
+  /** OpenAI 탭 비용 계산: 모델 이름 → 1M 토큰당 USD (input, cached input, output) */
+  /** Per 1M tokens (input/cached/output), or a flat perCall USD when only a per-call price is known. */
+  openaiPrices: Record<string, { input?: number; cached?: number; output?: number; perCall?: number }>;
   budgets: {
     global: Budget;
     projects: Record<string, Budget>;
@@ -31,7 +32,7 @@ const DEFAULT_CONFIG: AppConfig = {
   alertThresholds: [0.5, 0.8, 1.0],
   limitAlertThresholds: [0.5, 0.8, 0.95],
   discordWebhookUrl: "",
-  graphs: {},
+  openaiPrices: {},
   budgets: { global: {}, projects: {} },
 };
 

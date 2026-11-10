@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from "express";
 import path from "node:path";
 import { db, insertRequests } from "./db.js";
-import { getConfig } from "./config.js";
+import { getConfig, type AppConfig } from "./config.js";
 import { timeKeys } from "./time.js";
 import { extractApiRequests, type OtlpLogsPayload } from "./otlp.js";
 import { checkBudgets, getSpent, getBudget, GLOBAL_SCOPE, type AlertRow } from "./budget.js";
@@ -203,21 +203,71 @@ app.get("/api/recent", (req: Request, res: Response) => {
   res.json(recentRequests.all(clampInt(req.query.limit, DEFAULT_RECENT_LIMIT, MAX_RECENT_LIMIT)));
 });
 
-// ───────────────────────── Graphify 지도 ─────────────────────────
-// Only names listed in config.graphs are served, so the URL can never pick an arbitrary path.
-app.get("/api/graphs", (_req: Request, res: Response) => {
-  res.json(Object.keys(getConfig().graphs));
+// ───────────────────────── OpenAI 호출 (crpg-studio instrumentation.ts 가 보냄) ─────────────────────────
+// Only numbers arrive here (route, purpose tag, model, tokens, time); cost is worked out on read from config.openaiPrices,
+// so a price added later also prices older calls.
+const insertOpenaiCall = db.prepare(`
+INSERT INTO openai_calls (ts, day_key, hour_key, project, route, tag, model, ok, status,
+  input_tokens, cached_tokens, output_tokens, duration_ms)
+VALUES (@ts, @day_key, @hour_key, @project, @route, @tag, @model, @ok, @status,
+  @input_tokens, @cached_tokens, @output_tokens, @duration_ms)`);
+
+const str = (v: unknown, max = 80) => String(v ?? "").slice(0, max);
+const int = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.round(Number(v)) : 0);
+
+app.post("/api/openai/calls", (req: Request, res: Response) => {
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const ts = int(b.ts) || Date.now();
+  const keys = timeKeys(ts, getConfig().timezone);
+  insertOpenaiCall.run({
+    ts, day_key: keys.day, hour_key: keys.hour,
+    project: str(b.project) || "미지정", route: str(b.route), tag: str(b.tag), model: str(b.model) || "unknown",
+    ok: b.ok === false ? 0 : 1, status: int(b.status),
+    input_tokens: int(b.input_tokens), cached_tokens: int(b.cached_tokens), output_tokens: int(b.output_tokens),
+    duration_ms: int(b.duration_ms),
+  });
+  broadcast("openai", {});
+  res.json({ ok: true });
 });
 
-// /graph/<name> is graphify's own page; /graph/<name>/data is its graph.json for the readable group view.
-const GRAPH_FILES: Record<string, string> = { "": "graph.html", data: "graph.json" };
-app.get(["/graph/:name", "/graph/:name/:file"], (req: Request<{ name: string; file?: string }>, res: Response) => {
-  const graphs = getConfig().graphs;
-  const dir = Object.hasOwn(graphs, req.params.name) ? graphs[req.params.name] : undefined;
-  const file = GRAPH_FILES[req.params.file ?? ""];
-  if (!dir || !file) return void res.status(404).send("등록되지 않은 그래프입니다 (config.json graphs).");
-  res.sendFile(path.resolve(dir, file), (err) => {
-    if (err && !res.headersSent) res.status(404).send(`${file} 이 없습니다: ${dir} 에서 /graphify 를 먼저 실행하세요.`);
+interface OpenaiGroup {
+  day: string; hour: string; route: string; tag: string; model: string;
+  calls: number; errors: number; input: number; cached: number; output: number; ms: number; maxMs: number;
+}
+const openaiGroups = db.prepare(`
+  SELECT day_key AS day, hour_key AS hour, route, tag, model, COUNT(*) AS calls, SUM(1 - ok) AS errors,
+         SUM(input_tokens) AS input, SUM(cached_tokens) AS cached, SUM(output_tokens) AS output,
+         SUM(duration_ms) AS ms, MAX(duration_ms) AS maxMs
+  FROM openai_calls WHERE ts >= ? GROUP BY day_key, hour_key, route, tag, model`);
+const openaiRecent = db.prepare(`
+  SELECT ts, route, tag, model, ok, status, input_tokens, cached_tokens, output_tokens, duration_ms
+  FROM openai_calls ORDER BY ts DESC LIMIT 100`);
+
+/** Price per 1M tokens or per call; a snapshot name (gpt-6-luna-2026-…) uses the longest configured name it starts with. */
+function priceOf(model: string): AppConfig["openaiPrices"][string] | null {
+  const prices = getConfig().openaiPrices;
+  const key = Object.keys(prices).filter((k) => model.startsWith(k)).sort((a, b) => b.length - a.length)[0];
+  return key ? prices[key] : null;
+}
+
+app.get("/api/openai/summary", (req: Request, res: Response) => {
+  const days = clampInt(req.query.days, 7, MAX_DAYS_IN_CHART);
+  const tz = getConfig().timezone;
+  const now = Date.now();
+  const rows = (openaiGroups.all(now - days * MS_PER_DAY) as unknown as OpenaiGroup[]).map((g) => {
+    const p = priceOf(g.model);
+    const cost = !p ? 0 : p.perCall != null ? g.calls * p.perCall
+      : ((g.input - g.cached) * (p.input ?? 0) + g.cached * (p.cached ?? p.input ?? 0) + g.output * (p.output ?? 0)) / 1e6;
+    return { ...g, cost, priced: !!p };
+  });
+  const dayLabels: string[] = [];
+  for (let i = days - 1; i >= 0; i--) dayLabels.push(timeKeys(now - i * MS_PER_DAY, tz).day);
+  const hourLabels: string[] = [];
+  for (let i = HOURS_IN_CHART - 1; i >= 0; i--) hourLabels.push(timeKeys(now - i * MS_PER_HOUR, tz).hour);
+  res.json({
+    days, dayLabels, hourLabels, rows, recent: openaiRecent.all(),
+    unpriced: [...new Set(rows.filter((r) => !r.priced).map((r) => r.model))],
+    krwPerUsd: getConfig().krwPerUsd,
   });
 });
 

@@ -32,6 +32,24 @@ CREATE INDEX IF NOT EXISTS idx_req_month ON requests(month_key, project);
 CREATE INDEX IF NOT EXISTS idx_req_hour  ON requests(hour_key);
 CREATE INDEX IF NOT EXISTS idx_req_ts    ON requests(ts);
 
+CREATE TABLE IF NOT EXISTS openai_calls (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts            INTEGER NOT NULL,
+  day_key       TEXT    NOT NULL,
+  hour_key      TEXT    NOT NULL,
+  project       TEXT    NOT NULL,
+  route         TEXT    NOT NULL,  -- gm, gm/memory, npc/image ...
+  tag           TEXT    NOT NULL,  -- 호출 용도 (scene, talk, choices-redo ...), 없으면 빈 문자열
+  model         TEXT    NOT NULL,
+  ok            INTEGER NOT NULL DEFAULT 1,
+  status        INTEGER NOT NULL DEFAULT 0,
+  input_tokens  INTEGER NOT NULL DEFAULT 0,  -- cached 포함
+  cached_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  duration_ms   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_oai_ts ON openai_calls(ts);
+
 CREATE TABLE IF NOT EXISTS alerts (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   ts         INTEGER NOT NULL,
